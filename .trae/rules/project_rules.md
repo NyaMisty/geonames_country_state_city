@@ -1,0 +1,1 @@
+严禁直接读取allCountries.txt，但是可以使用python处理其数据
