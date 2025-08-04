@@ -73,11 +73,13 @@ class GeoHierarchy:
             states_df = adm1_df.copy()
             
             # 数据清理
-            states_df = states_df.dropna(subset=['geonameid', 'country_code', 'admin1_code'])
+            # states_df = states_df.dropna(subset=['geonameid', 'country_code', 'admin1_code'])
+            states_df = states_df.dropna(subset=['geonameid', 'country_code'])
             states_df['geonameid'] = states_df['geonameid'].astype(int)
             
             # 去重（基于country_code + admin1_code）
-            states_df = states_df.drop_duplicates(subset=['country_code', 'admin1_code'])
+            # states_df = states_df.drop_duplicates(subset=['country_code', 'admin1_code'])
+            states_df = states_df.drop_duplicates(subset=['geonameid'])
             
             self.logger.info(f"构建state表完成，共{len(states_df)}条记录，包含{len(states_df.columns)}个字段")
             return states_df
@@ -108,7 +110,8 @@ class GeoHierarchy:
             cities_df['admin1_code'] = cities_df['admin1_code'].fillna('')
             cities_df['admin2_code'] = cities_df['admin2_code'].fillna('')
             
-            # 去重（基于geonameid）
+            # 勿去重，保留原始结果
+            # # 去重（基于geonameid）
             cities_df = cities_df.drop_duplicates(subset=['geonameid'])
             
             self.logger.info(f"构建city表完成，共{len(cities_df)}条记录，包含{len(cities_df.columns)}个字段")
@@ -132,6 +135,8 @@ class GeoHierarchy:
         try:
             state_names = []
             
+            geoname_count = 0
+            csc_count = 0
             for _, state in states_df.iterrows():
                 geonameid = int(state['geonameid'])
                 country_code = state['country_code']
@@ -146,6 +151,8 @@ class GeoHierarchy:
                 
                 # 合并所有别名
                 all_aliases = list(aliases) + list(csc_aliases)
+                geoname_count += len(list(aliases))
+                csc_count += len(list(csc_aliases))
                 
                 # 如果没有别名，至少添加主名称
                 if not all_aliases:
@@ -164,11 +171,12 @@ class GeoHierarchy:
             
             state_names_df = pd.DataFrame(state_names)
             
-            # 去重（基于country_code + name）
-            if not state_names_df.empty:
-                state_names_df = state_names_df.drop_duplicates(subset=['country_code', 'name'])
+            # 勿去重，保留原始结果
+            # # 去重（基于country_code + name）
+            # if not state_names_df.empty:
+            #     state_names_df = state_names_df.drop_duplicates(subset=['country_code', 'name'])
             
-            self.logger.info(f"构建state_names表完成，共{len(state_names_df)}条记录")
+            self.logger.info(f"构建state_names表完成，共{len(state_names_df)}条(%d + %d)记录", geoname_count, csc_count)
             return state_names_df
             
         except Exception as e:
@@ -239,9 +247,10 @@ class GeoHierarchy:
             
             city_names_df = pd.DataFrame(city_names)
             
-            # 去重（基于country_code + state_geonameid + name）
-            if not city_names_df.empty:
-                city_names_df = city_names_df.drop_duplicates(subset=['country_code', 'state_geonameid', 'name'])
+            # 不要去重，保留原始结果
+            # # 去重（基于country_code + state_geonameid + name）
+            # if not city_names_df.empty:
+            #     city_names_df = city_names_df.drop_duplicates(subset=['country_code', 'state_geonameid', 'name'])
             
             self.logger.info(f"构建city_names表完成，共{len(city_names_df)}条记录")
             return city_names_df

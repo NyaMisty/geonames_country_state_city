@@ -25,9 +25,6 @@ class GeonamesParser:
         'dem', 'timezone', 'modification_date'
     ]
     
-    # 目标行政区级别
-    TARGET_FEATURE_CODES = ['ADM1', 'ADM2']
-    
     def __init__(self, file_path: str, chunk_size: int = 10000):
         """
         初始化解析器
@@ -45,7 +42,7 @@ class GeonamesParser:
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"GeoNames数据文件不存在: {file_path}")
     
-    def parse_chunks(self) -> Iterator[pd.DataFrame]:
+    def parse_chunks(self, raw=False) -> Iterator[pd.DataFrame]:
         """
         分块解析GeoNames数据文件
         
@@ -83,7 +80,7 @@ class GeonamesParser:
                     'timezone': 'string',
                     'modification_date': 'string'
                 },
-                na_values=['', 'NULL'],
+                na_values=['NULL'],
                 keep_default_na=False
             )
             
@@ -101,7 +98,11 @@ class GeonamesParser:
                 
                 if len(filtered_chunk) > 0:
                     self.logger.debug(f"块 {chunk_count}: 原始 {len(chunk)} 行，筛选后 {len(filtered_chunk)} 行")
-                    yield filtered_chunk
+                if not raw:
+                    if len(filtered_chunk) > 0:
+                        yield filtered_chunk
+                else:
+                    yield chunk, filtered_chunk
                 
             self.logger.info(f"解析完成: 总计 {chunk_count} 块，{total_records} 行，筛选出 {filtered_records} 行行政区数据")
             
@@ -120,7 +121,18 @@ class GeonamesParser:
             pd.DataFrame: 筛选后的行政区数据
         """
         # 筛选ADM1和ADM2记录
-        mask = df['feature_code'].isin(self.TARGET_FEATURE_CODES)
+        mask = (
+            df['feature_code'].isin(['ADM1', 'ADM1H']) | # adm1 record
+            df['feature_code'].isin(['ADM2', 'ADM2H']) | # adm2 record
+            df['feature_code'].isin(['ADMD', 'ADM3', 'ADM4']) | # adm2 record
+            (df['feature_code'].isin(['PPL', 'PPLC', 'PPLCH', 'PPLA', 'PPLA2', 'PPLA3', 'PPLA4']) & df['admin2_code'].isna())
+            # (df['feature_code'].str.startswith('PPL')) # don't include PPLX
+
+            # (df['feature_code'].isin(['ADMD']) & (
+            #     df['admin2_code'].isna() | (df['admin1_code'] == df['admin2_code'])
+            # )) | # adm2 record
+            # (df['feature_code'].isin(['PPL', 'PPLC', 'PPLCH', 'PPLA', 'PPLA2', 'PPLA3', 'PPLA4']) & df['admin2_code'].isna())
+        )
         filtered_df = df[mask].copy()
         
         # 数据清理
@@ -262,67 +274,67 @@ class GeonamesParser:
             self.logger.error(f"查询geonameid {geonameid} 时发生错误: {e}")
             return None
     
-    def batch_query_geonameids(self, geonameid_list: List[str]) -> Dict[str, Dict]:
-        """
-        批量查询geonameid对应的记录
+    # def batch_query_geonameids(self, geonameid_list: List[str]) -> Dict[str, Dict]:
+    #     """
+    #     批量查询geonameid对应的记录
         
-        Args:
-            geonameid_list: geonameid列表
+    #     Args:
+    #         geonameid_list: geonameid列表
             
-        Returns:
-            Dict[str, Dict]: {geonameid: record} 映射字典
-        """
-        try:
-            self.logger.info(f"开始批量查询 {len(geonameid_list)} 个geonameid")
+    #     Returns:
+    #         Dict[str, Dict]: {geonameid: record} 映射字典
+    #     """
+    #     try:
+    #         self.logger.info(f"开始批量查询 {len(geonameid_list)} 个geonameid")
             
-            result_mapping = {}
-            target_ids = set(int(gid) for gid in geonameid_list)
-            found_ids = set()
+    #         result_mapping = {}
+    #         target_ids = set(int(gid) for gid in geonameid_list)
+    #         found_ids = set()
             
-            # 分块搜索
-            chunk_reader = pd.read_csv(
-                self.file_path,
-                sep='\t',
-                names=self.FIELD_NAMES,
-                chunksize=self.chunk_size,
-                encoding='utf-8',
-                dtype={'geonameid': 'int64'},
-                na_values=['', 'NULL'],
-                keep_default_na=False
-            )
+    #         # 分块搜索
+    #         chunk_reader = pd.read_csv(
+    #             self.file_path,
+    #             sep='\t',
+    #             names=self.FIELD_NAMES,
+    #             chunksize=self.chunk_size,
+    #             encoding='utf-8',
+    #             dtype={'geonameid': 'int64'},
+    #             na_values=['', 'NULL'],
+    #             keep_default_na=False
+    #         )
             
-            chunk_count = 0
-            for chunk in chunk_reader:
-                chunk_count += 1
+    #         chunk_count = 0
+    #         for chunk in chunk_reader:
+    #             chunk_count += 1
                 
-                # 查找匹配的记录
-                matches = chunk[chunk['geonameid'].isin(target_ids)]
+    #             # 查找匹配的记录
+    #             matches = chunk[chunk['geonameid'].isin(target_ids)]
                 
-                for _, record in matches.iterrows():
-                    geonameid_str = str(record['geonameid'])
-                    result_mapping[geonameid_str] = record.to_dict()
-                    found_ids.add(record['geonameid'])
+    #             for _, record in matches.iterrows():
+    #                 geonameid_str = str(record['geonameid'])
+    #                 result_mapping[geonameid_str] = record.to_dict()
+    #                 found_ids.add(record['geonameid'])
                 
-                # 如果已找到所有目标ID，提前退出
-                if len(found_ids) == len(target_ids):
-                    self.logger.debug(f"在第 {chunk_count} 块找到所有目标记录")
-                    break
+    #             # 如果已找到所有目标ID，提前退出
+    #             if len(found_ids) == len(target_ids):
+    #                 self.logger.debug(f"在第 {chunk_count} 块找到所有目标记录")
+    #                 break
             
-            # 记录查询结果
-            found_count = len(result_mapping)
-            missing_count = len(geonameid_list) - found_count
+    #         # 记录查询结果
+    #         found_count = len(result_mapping)
+    #         missing_count = len(geonameid_list) - found_count
             
-            self.logger.info(f"批量查询完成: 找到 {found_count}/{len(geonameid_list)} 个记录")
+    #         self.logger.info(f"批量查询完成: 找到 {found_count}/{len(geonameid_list)} 个记录")
             
-            if missing_count > 0:
-                missing_ids = [gid for gid in geonameid_list if gid not in result_mapping]
-                self.logger.warning(f"未找到 {missing_count} 个geonameid: {missing_ids[:10]}{'...' if len(missing_ids) > 10 else ''}")
+    #         if missing_count > 0:
+    #             missing_ids = [gid for gid in geonameid_list if gid not in result_mapping]
+    #             self.logger.warning(f"未找到 {missing_count} 个geonameid: {missing_ids[:10]}{'...' if len(missing_ids) > 10 else ''}")
             
-            return result_mapping
+    #         return result_mapping
             
-        except Exception as e:
-            self.logger.error(f"批量查询geonameid时发生错误: {e}")
-            return {}
+    #     except Exception as e:
+    #         self.logger.error(f"批量查询geonameid时发生错误: {e}")
+    #         return {}
     
     def extract_admin_codes(self, record: Dict) -> Tuple[str, str]:
         """
@@ -385,51 +397,51 @@ class GeonamesParser:
             self.logger.error(f"构建索引时发生错误: {e}")
             return {}
     
-    def get_admin_code_summary(self, geonameid_list: List[str]) -> Dict[str, any]:
-        """
-        获取指定geonameid列表的admin code摘要信息
+    # def get_admin_code_summary(self, geonameid_list: List[str]) -> Dict[str, any]:
+    #     """
+    #     获取指定geonameid列表的admin code摘要信息
         
-        Args:
-            geonameid_list: geonameid列表
+    #     Args:
+    #         geonameid_list: geonameid列表
             
-        Returns:
-            Dict: 摘要信息
-        """
-        try:
-            records = self.batch_query_geonameids(geonameid_list)
+    #     Returns:
+    #         Dict: 摘要信息
+    #     """
+    #     try:
+    #         records = self.batch_query_geonameids(geonameid_list)
             
-            summary = {
-                'total_queried': len(geonameid_list),
-                'found_records': len(records),
-                'admin1_codes': set(),
-                'admin2_codes': set(),
-                'countries': set(),
-                'feature_codes': set()
-            }
+    #         summary = {
+    #             'total_queried': len(geonameid_list),
+    #             'found_records': len(records),
+    #             'admin1_codes': set(),
+    #             'admin2_codes': set(),
+    #             'countries': set(),
+    #             'feature_codes': set()
+    #         }
             
-            for record in records.values():
-                admin1, admin2 = self.extract_admin_codes(record)
+    #         for record in records.values():
+    #             admin1, admin2 = self.extract_admin_codes(record)
                 
-                if admin1:
-                    summary['admin1_codes'].add(admin1)
-                if admin2:
-                    summary['admin2_codes'].add(admin2)
+    #             if admin1:
+    #                 summary['admin1_codes'].add(admin1)
+    #             if admin2:
+    #                 summary['admin2_codes'].add(admin2)
                 
-                if record.get('country_code'):
-                    summary['countries'].add(record['country_code'])
+    #             if record.get('country_code'):
+    #                 summary['countries'].add(record['country_code'])
                 
-                if record.get('feature_code'):
-                    summary['feature_codes'].add(record['feature_code'])
+    #             if record.get('feature_code'):
+    #                 summary['feature_codes'].add(record['feature_code'])
             
-            # 转换set为sorted list
-            for key in ['admin1_codes', 'admin2_codes', 'countries', 'feature_codes']:
-                summary[key] = sorted(list(summary[key]))
+    #         # 转换set为sorted list
+    #         for key in ['admin1_codes', 'admin2_codes', 'countries', 'feature_codes']:
+    #             summary[key] = sorted(list(summary[key]))
             
-            return summary
+    #         return summary
             
-        except Exception as e:
-            self.logger.error(f"生成admin code摘要时发生错误: {e}")
-            return {}
+    #     except Exception as e:
+    #         self.logger.error(f"生成admin code摘要时发生错误: {e}")
+    #         return {}
 
 def main():
     """

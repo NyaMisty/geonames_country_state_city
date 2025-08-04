@@ -140,7 +140,7 @@ class CSCProcessor:
             # 检查wikiDataId格式
             invalid_wiki_ids = self._validate_wikidata_ids(df)
             if invalid_wiki_ids:
-                self.logger.warning(f"发现 {len(invalid_wiki_ids)} 个无效的wikiDataId")
+                self.logger.warning(f"发现 {len(invalid_wiki_ids)} 个无效的wikiDataId: {invalid_wiki_ids[:5]}...")
             
             # 检查坐标范围
             invalid_coords = self._validate_coordinates(df)
@@ -336,13 +336,7 @@ class CSCProcessor:
         text = text.strip()
         
         return text if text else None
-    
-    # process_csc_names方法已删除 - CSC名称现在通过geo_hierarchy模块处理
-    
-    # generate_csc_city_names方法已删除 - CSC名称现在通过geo_hierarchy模块处理
-    
-    # generate_csc_state_names方法已删除 - CSC名称现在通过geo_hierarchy模块处理
-    
+
     def _normalize_csc_name(self, name: str) -> List[str]:
         """
         CSC名称标准化处理，使用AliasProcessor进行统一的别名处理
@@ -413,7 +407,7 @@ class CSCProcessor:
         
         return stats
     
-    def process_csc_integration(self, enable_cache: bool = True) -> Dict[str, Any]:
+    def process_csc_integration1(self, enable_cache: bool = True) -> pd.DataFrame:
         """
         统一的CSC数据处理集成接口
         
@@ -421,14 +415,8 @@ class CSCProcessor:
             enable_cache: 是否启用Wikidata查询缓存，默认True
             
         Returns:
-            Dict[str, Any]: 包含处理结果的字典，格式为:
-            {
-                "csc_cities_df": DataFrame,     # CSC城市数据
-                "csc_states_df": DataFrame,     # CSC州数据
-                "csc_mapping_df": DataFrame,    # CSC映射表(csc_id, wikidata_id, geonameid)
-                "csc_aliases_dict": dict,       # geonameid到CSC别名列表的映射
-                "stats": dict                   # 处理统计信息
-            }
+            Dict[str, Any]: geomapping匹配结果
+            Dict[str, Any]: wikidata列表
             
         Raises:
             Exception: 处理过程中的任何错误
@@ -461,14 +449,36 @@ class CSCProcessor:
             self.logger.info(f"步骤5: 批量查询geonameid (缓存: {'启用' if enable_cache else '禁用'})")
             from wikidata_query import batch_query_geonameid
             geonameid_mapping = batch_query_geonameid(wikidata_ids, enable_cache=enable_cache)
+            self.cleaned_data = cleaned_data
+            return geonameid_mapping, wikidata_ids
+        except Exception as e:
+            self.logger.error(f"CSC数据集成处理失败: {str(e)}")
+            raise
+    def process_csc_integration2(self, geonameid_mapping, wikidata_ids) -> Dict[str, Any]:
+        """
+        统一的CSC数据处理集成接口2
+        
+        Returns:
+            Dict[str, Any]: 包含处理结果的字典，格式为:
+            {
+                "csc_states_df": DataFrame,     # CSC州数据
+                "csc_mapping_df": DataFrame,    # CSC映射表(csc_id, wikidata_id, geonameid)
+                "csc_aliases_dict": dict,       # geonameid到CSC别名列表的映射
+                "stats": dict                   # 处理统计信息
+            }
+            
+        Raises:
+            Exception: 处理过程中的任何错误
+        """
+        try:
+            self.logger.info("开始CSC数据集成处理流程2")
             
             # 6. 将geonameid映射添加到数据中
             self.logger.info("步骤6: 合并geonameid映射")
-            enriched_data = self._merge_geonameid_mapping(cleaned_data, geonameid_mapping)
+            enriched_data = self._merge_geonameid_mapping(self.cleaned_data, geonameid_mapping)
             
-                # 7. 生成CSC数据结构
+            # 7. 生成CSC数据结构
             self.logger.info("步骤7: 生成CSC数据结构")
-            csc_cities_df, csc_states_df = self._generate_csc_dataframes(enriched_data)
             csc_mapping_df = self._generate_csc_mapping(enriched_data)
             csc_aliases_dict = self._generate_csc_aliases(enriched_data)
             
@@ -480,8 +490,6 @@ class CSCProcessor:
             
             # 9. 构建返回结果
             result = {
-                "csc_cities_df": csc_cities_df,
-                "csc_states_df": csc_states_df,
                 "csc_mapping_df": csc_mapping_df,
                 "csc_aliases_dict": csc_aliases_dict,
                 "stats": stats
@@ -491,7 +499,7 @@ class CSCProcessor:
             return result
             
         except Exception as e:
-            self.logger.error(f"CSC数据集成处理失败: {str(e)}")
+            self.logger.error(f"CSC数据集成处理失败: {str(e)}", exc_info=True)
             raise
     
     def _create_empty_result(self) -> Dict[str, Any]:
@@ -502,14 +510,15 @@ class CSCProcessor:
             Dict[str, Any]: 空的结果字典
         """
         return {
-            "csc_cities_df": pd.DataFrame(),
             "csc_states_df": pd.DataFrame(),
             "csc_mapping_df": pd.DataFrame(),
             "csc_aliases_dict": {},
             "stats": {
                 "total_records": 0,
                 "valid_wikidata_ids": 0,
-                "geonameid_matches": 0
+                "geonameid_matches": 0,
+                "states_generated": 0,
+                "cities_generated": 0
             }
         }
     
@@ -537,45 +546,6 @@ class CSCProcessor:
         
         return enriched_data
     
-    def _generate_csc_dataframes(self, enriched_data: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """
-        生成CSC城市和州数据DataFrame
-        
-        Args:
-            enriched_data: 包含geonameid的enriched数据
-            
-        Returns:
-            Tuple[pd.DataFrame, pd.DataFrame]: (cities_df, states_df)
-        """
-        # 生成城市数据 - 只包含有geonameid匹配的记录
-        cities_data = enriched_data[enriched_data['matched_geonameid'].notna()].copy()
-        
-        # 重命名列以匹配标准格式
-        cities_df = cities_data.rename(columns={
-            'matched_geonameid': 'geonameid',
-            'name': 'name',
-            'country_code': 'country_code',
-            'latitude': 'latitude',
-            'longitude': 'longitude'
-        })[['geonameid', 'name', 'country_code', 'latitude', 'longitude']]
-        
-        # 生成州数据 - 从城市数据中提取唯一的州信息
-        states_data = enriched_data[
-            (enriched_data['state_id'].notna()) & 
-            (enriched_data['state_name'].notna())
-        ][['state_id', 'state_name', 'country_code']].drop_duplicates()
-        
-        # 重命名州数据列
-        states_df = states_data.rename(columns={
-            'state_id': 'geonameid',
-            'state_name': 'name'
-        })
-        
-        self.logger.info(f"生成城市数据: {len(cities_df)} 条记录")
-        self.logger.info(f"生成州数据: {len(states_df)} 条记录")
-        
-        return cities_df, states_df
-    
     def _generate_csc_mapping(self, enriched_data: pd.DataFrame) -> pd.DataFrame:
         """
         生成CSC映射表，包含cscId、wikidataId、geonameid字段
@@ -590,11 +560,12 @@ class CSCProcessor:
         mapping_data = enriched_data[enriched_data['matched_geonameid'].notna()].copy()
         
         # 生成映射表
-        csc_mapping_df = mapping_data[['id', 'wikiDataId', 'matched_geonameid']].rename(columns={
-            'id': 'csc_id',
-            'wikiDataId': 'wikidata_id',
+        # csc_mapping_df = mapping_data[['id', 'wikiDataId', 'matched_geonameid']].rename(columns={
+        csc_mapping_df = mapping_data.rename(columns={
+            # 'id': 'csc_id',
+            # 'wikiDataId': 'wikidata_id',
             'matched_geonameid': 'geonameid'
-        }).drop_duplicates()
+        }) #.drop_duplicates()
         
         self.logger.info(f"生成CSC映射表: {len(csc_mapping_df)} 条记录")
         
@@ -677,10 +648,19 @@ class CSCProcessor:
                 "records_missing_geonameid": enriched_data['matched_geonameid'].isna().sum()
             }
         
+        # 计算生成的城市和州数量
+        cities_generated = enriched_data[enriched_data['matched_geonameid'].notna()].shape[0] if not enriched_data.empty else 0
+        states_generated = enriched_data[
+            (enriched_data['state_id'].notna()) & 
+            (enriched_data['state_name'].notna())
+        ][['state_id', 'state_name', 'country_code']].drop_duplicates().shape[0] if not enriched_data.empty else 0
+        
         stats = {
             "total_records": len(enriched_data),
             "valid_wikidata_ids": total_wikidata_ids,
             "geonameid_matches": geonameid_matches,
+            "states_generated": states_generated,
+            "cities_generated": cities_generated,
             "geonameid_match_rate": round(match_rate, 2),
             "countries_covered": countries_covered,
             "memory_usage": memory_stats,

@@ -196,8 +196,46 @@ class CSVExporter:
             self.logger.error(f"导出city_names数据时出错: {e}")
             return False
     
+    def export_csc_mapping(self, csc_mapping_df: pd.DataFrame, filename: str = 'csc_mapping.csv') -> bool:
+        """导出csc_mapping表到CSV文件
+        
+        Args:
+            csc_mapping_df: csc_mapping数据DataFrame
+            filename: 输出文件名
+            
+        Returns:
+            bool: 导出是否成功
+        """
+        try:
+            if csc_mapping_df.empty:
+                self.logger.warning("Csc_mapping数据为空，跳过导出")
+                return False
+            
+            # 确保字段顺序正确
+            # expected_columns = ['csc_id', 'wikidata_id', 'geonameid']
+            expected_columns = ['id', 'name', 'state_id', 'state_code', 'state_name', 'country_id', 'country_code', 'country_name', 'latitude', 'longitude', 'wikiDataId', 'geonameid']
+            missing_columns = [col for col in expected_columns if col not in csc_mapping_df.columns]
+            if missing_columns:
+                self.logger.error(f"Csc_mapping数据缺少必要字段: {missing_columns}")
+                return False
+            
+            # 选择并排序字段
+            export_df = csc_mapping_df[expected_columns].copy()
+            
+            # 导出到CSV
+            output_path = os.path.join(self.output_dir, filename)
+            export_df.to_csv(output_path, index=False, encoding='utf-8')
+            
+            self.logger.info(f"成功导出{len(export_df)}条csc_mapping记录到 {output_path}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"导出csc_mapping数据时出错: {e}")
+            return False
+
     def export_all(self, states_df: pd.DataFrame, cities_df: pd.DataFrame, 
-                   state_names_df: pd.DataFrame, city_names_df: pd.DataFrame) -> bool:
+                   state_names_df: pd.DataFrame, city_names_df: pd.DataFrame,
+                   csc_mapping_df: pd.DataFrame) -> bool:
         """导出所有表到CSV文件
         
         Args:
@@ -205,6 +243,7 @@ class CSVExporter:
             cities_df: cities数据DataFrame
             state_names_df: state_names数据DataFrame
             city_names_df: city_names数据DataFrame
+            csc_mapping_df: csc_mapping数据DataFrame
             
         Returns:
             bool: 所有导出是否成功
@@ -217,6 +256,7 @@ class CSVExporter:
             results.append(self.export_cities(cities_df))
             results.append(self.export_state_names(state_names_df))
             results.append(self.export_city_names(city_names_df))
+            results.append(self.export_csc_mapping(csc_mapping_df))
             
             success_count = sum(results)
             total_count = len(results)
@@ -243,7 +283,7 @@ class CSVExporter:
             'files': []
         }
         
-        expected_files = ['states.csv', 'cities.csv', 'state_names.csv', 'city_names.csv']
+        expected_files = ['states.csv', 'cities.csv', 'state_names.csv', 'city_names.csv', 'csc_mapping.csv']
         
         for filename in expected_files:
             filepath = os.path.join(self.output_dir, filename)
@@ -279,7 +319,7 @@ class CSVExporter:
             bool: 验证是否通过
         """
         try:
-            expected_files = ['states.csv', 'cities.csv', 'state_names.csv', 'city_names.csv']
+            expected_files = ['states.csv', 'cities.csv', 'state_names.csv', 'city_names.csv', 'csc_mapping.csv']
             
             for filename in expected_files:
                 filepath = os.path.join(self.output_dir, filename)

@@ -1,3 +1,6 @@
 /source_data
 /cache
 /output
+/.vscode
+/.VSCodeCounter
+__pycache__
