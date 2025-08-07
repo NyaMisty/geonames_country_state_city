@@ -80,7 +80,7 @@ class GeonamesParser:
                     'timezone': 'string',
                     'modification_date': 'string'
                 },
-                na_values=['NULL'],
+                na_values=['', 'NULL'],
                 keep_default_na=False
             )
             
@@ -125,7 +125,17 @@ class GeonamesParser:
             df['feature_code'].isin(['ADM1', 'ADM1H']) | # adm1 record
             df['feature_code'].isin(['ADM2', 'ADM2H']) | # adm2 record
             df['feature_code'].isin(['ADMD', 'ADM3', 'ADM4']) | # adm2 record
-            (df['feature_code'].isin(['PPL', 'PPLC', 'PPLCH', 'PPLA', 'PPLA2', 'PPLA3', 'PPLA4']) & df['admin2_code'].isna())
+            # (df['feature_code'].isin(['PPL', 'PPLC', 'PPLCH', 'PPLA', 'PPLA2', 'PPLA3', 'PPLA4']) & df['admin2_code'].isna())
+            (
+                df['feature_code'].isin([
+                    'PPL', 'PPLC', 'PPLCH', 
+                    'PPLA', 'PPLA2', 
+                    'PPLA3', 'PPLA4'
+                ]) & (
+                    df['population'].notna() & df['population'].ne(0)
+                    & (df['population'].gt(2000) | df['admin2_code'].isna())
+                )
+            )
             # (df['feature_code'].str.startswith('PPL')) # don't include PPLX
 
             # (df['feature_code'].isin(['ADMD']) & (

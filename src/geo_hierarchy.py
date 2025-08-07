@@ -11,6 +11,8 @@ import pandas as pd
 import logging
 from typing import Dict, List, Tuple, Optional
 
+from sqlalchemy import exc
+
 class GeoHierarchy:
     """地理层级关系管理器"""
     
@@ -154,19 +156,19 @@ class GeoHierarchy:
                 geoname_count += len(list(aliases))
                 csc_count += len(list(csc_aliases))
                 
-                # 如果没有别名，至少添加主名称
-                if not all_aliases:
-                    all_aliases = [state['name']]
-                    if pd.notna(state['asciiname']) and state['asciiname'] != state['name']:
-                        all_aliases.append(state['asciiname'])
-                
+                # 添加主名称
+                all_aliases += [state['name']]
+                if pd.notna(state['asciiname']) and state['asciiname'] != state['name']:
+                    all_aliases.append(state['asciiname'])
+
                 # 为每个别名创建映射记录
                 for alias in all_aliases:
                     if alias and alias.strip():  # 确保别名不为空
                         state_names.append({
                             'country_code': country_code,
                             'name': alias.strip(),
-                            'geonameid': geonameid
+                            'geonameid': geonameid,
+                            'admin1_code': state['admin1_code'],
                         })
             
             state_names_df = pd.DataFrame(state_names)
@@ -180,7 +182,7 @@ class GeoHierarchy:
             return state_names_df
             
         except Exception as e:
-            self.logger.error(f"创建state_names映射时出错: {e}")
+            self.logger.error(f"创建state_names映射时出错:", exc_info=True)
             return pd.DataFrame()
     
     def create_city_names_mapping(self, cities_df: pd.DataFrame, states_df: pd.DataFrame, aliases_dict: Dict[int, List[str]], csc_aliases_dict: Dict[int, List[str]] = None) -> pd.DataFrame:
@@ -229,20 +231,20 @@ class GeoHierarchy:
                 # 合并所有别名
                 all_aliases = list(aliases) + list(csc_aliases)
                 
-                # 如果没有别名，至少添加主名称
-                if not all_aliases:
-                    all_aliases = [city['name']]
-                    if pd.notna(city['asciiname']) and city['asciiname'] != city['name']:
-                        all_aliases.append(city['asciiname'])
+                # 添加主名称
+                all_aliases += [city['name']]
+                if pd.notna(city['asciiname']) and city['asciiname'] != city['name']:
+                    all_aliases.append(city['asciiname'])
                 
                 # 为每个别名创建映射记录
                 for alias in all_aliases:
                     if alias and alias.strip():  # 确保别名不为空
                         city_names.append({
                             'country_code': country_code,
+                            'admin1_code': city['admin1_code'],
                             'state_geonameid': state_geonameid,
                             'name': alias.strip(),
-                            'geonameid': geonameid
+                            'geonameid': geonameid,
                         })
             
             city_names_df = pd.DataFrame(city_names)
@@ -258,7 +260,7 @@ class GeoHierarchy:
         except Exception as e:
             self.logger.error(f"创建city_names映射时出错: {e}")
             return pd.DataFrame()
-    
+
     def verify_admin_codes(self, df: pd.DataFrame) -> bool:
         """验证admin代码的完整性
         

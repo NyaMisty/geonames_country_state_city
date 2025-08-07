@@ -116,6 +116,7 @@ class SQLiteIntegrator:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     country_code TEXT NOT NULL COLLATE NOCASE,
                     name TEXT NOT NULL COLLATE NOCASE,
+                    admin1_code TEXT NOT NULL,
                     geonameid INTEGER,
                     FOREIGN KEY (geonameid) REFERENCES states(geonameid)
                 )
@@ -126,6 +127,7 @@ class SQLiteIntegrator:
                 CREATE TABLE IF NOT EXISTS city_names (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     country_code TEXT NOT NULL COLLATE NOCASE,
+                    admin1_code TEXT NOT NULL,
                     state_geonameid INTEGER,
                     name TEXT NOT NULL COLLATE NOCASE,
                     geonameid INTEGER,
@@ -183,6 +185,14 @@ class SQLiteIntegrator:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_city_names_lookup 
                 ON city_names(country_code, state_geonameid, name)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_city_names_lookup2 
+                ON city_names(state_geonameid, name)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_city_names_lookup3 
+                ON city_names(country_code, admin1_code, name)
             """)
             
             # 为重复检查创建额外索引
@@ -260,6 +270,7 @@ class SQLiteIntegrator:
                 cities_df = pd.read_csv(cities_file, na_values=[], keep_default_na=False)
                 cities_df.to_sql('cities', conn, if_exists='append', index=False)
                 self.logger.info(f"导入{len(cities_df)}条cities记录")
+                del cities_df
             else:
                 self.logger.warning(f"cities.csv文件不存在: {cities_file}")
             
@@ -287,8 +298,9 @@ class SQLiteIntegrator:
                 csc_mapping_df = pd.read_csv(csc_mapping_file, na_values=[], keep_default_na=False)
                 csc_mapping_df.to_sql('csc_mapping', conn, if_exists='append', index=False)
                 self.logger.info(f"导入{len(csc_mapping_df)}条csc_mapping记录")
+                del csc_mapping_df
             else:
-                self.logger.warning(f"city_names.csv文件不存在: {city_names_file}")
+                self.logger.warning(f"csc_mapping.csv文件不存在: {csc_mapping_file}")
             
             # conn.close()
             

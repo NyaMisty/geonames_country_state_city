@@ -48,12 +48,10 @@ class DuplicateChecker:
         logger.info("开始检查state_names表中的重复项")
         
         query = '''
-        SELECT country_code, name, COUNT(*) as duplicate_count, 
-               GROUP_CONCAT(geonameid) as geoname_ids
+        SELECT country_code, name
         FROM state_names 
         GROUP BY country_code, name 
         HAVING COUNT(*) > 1
-        ORDER BY duplicate_count DESC, country_code, name
         '''
         
         try:
@@ -80,12 +78,10 @@ class DuplicateChecker:
         logger.info("开始检查city_names表中的重复项")
         
         query = '''
-        SELECT country_code, state_geonameid, name, COUNT(*) as duplicate_count,
-               GROUP_CONCAT(geonameid) as geoname_ids
+        SELECT country_code, state_geonameid, name
         FROM city_names 
         GROUP BY country_code, state_geonameid, name 
         HAVING COUNT(*) > 1
-        ORDER BY duplicate_count DESC, country_code, state_geonameid, name
         '''
         
         try:
@@ -126,8 +122,10 @@ class DuplicateChecker:
             conn.close()
             
             # 计算重复记录数
-            state_duplicate_records = state_dups['duplicate_count'].sum() if len(state_dups) > 0 else 0
-            city_duplicate_records = city_dups['duplicate_count'].sum() if len(city_dups) > 0 else 0
+            # state_duplicate_records = state_dups['duplicate_count'].sum() if len(state_dups) > 0 else 0
+            # city_duplicate_records = city_dups['duplicate_count'].sum() if len(city_dups) > 0 else 0
+            state_duplicate_records = len(state_dups)
+            city_duplicate_records = len(city_dups)
             
             statistics = {
                 'state_names': {

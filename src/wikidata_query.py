@@ -284,30 +284,51 @@ def batch_query_geonameid(wikidata_ids: List[str], batch_size: int = 500, enable
             # 构建SPARQL查询
             values_clause = '\n'.join(f'wd:{qid}' for qid in batch_ids)
             query = f'''
-            SELECT ?item ?geonameid WHERE {{
+            SELECT ?item ?geonameid ?redirected WHERE {{
             VALUES ?item {{
             {values_clause}
             }}
-            ?item wdt:P1566 ?geonameid.
+            OPTIONAL {{ ?item wdt:P1566 ?geonameid. }}
+            OPTIONAL {{ ?item owl:sameAs ?redirected. }}
             }}'''
             
             # 执行查询
             batch_results = list(doSparql(query))
             
+            redirectedIds = {} # newQid -> oldQid
             # 处理结果
             for result in batch_results:
                 item_uri = result.get('item', '')
                 geonameid = result.get('geonameid', '')
+                redirected = result.get('redirected', '')
                 
                 # 从URI中提取QID
-                if item_uri.startswith('http://www.wikidata.org/entity/'):
-                    qid = item_uri.replace('http://www.wikidata.org/entity/', '')
-                    if geonameid:
-                        result_mapping[qid] = geonameid
-                        # 缓存查询结果
-                        if cache:
-                            cache.cache_result(qid, geonameid)
+                assert item_uri.startswith('http://www.wikidata.org/entity/')
+                qid = item_uri.replace('http://www.wikidata.org/entity/', '')
+                if geonameid:
+                    result_mapping[qid] = geonameid
+                    # 缓存查询结果
+                    if cache:
+                        cache.cache_result(qid, geonameid)
+                elif redirected:
+                    assert redirected.startswith('http://www.wikidata.org/entity/')
+                    newQid = redirected.replace('http://www.wikidata.org/entity/', '')
+                    redirectedIds[newQid] = qid
+                else:
+                    continue
             
+            if redirectedIds:
+                logger.info(f"查询 {len(redirectedIds)} 个重定向ID")
+                redirectedResults = batch_query_geonameid(redirectedIds.keys(), batch_size, enable_cache)
+                for newQid, geonameid in redirectedResults.items():
+                    oldQid = redirectedIds[newQid]
+                    result_mapping[oldQid] = geonameid
+                    result_mapping[newQid] = geonameid
+                    # 缓存查询结果
+                    if cache:
+                        cache.cache_result(oldQid, geonameid)
+                        cache.cache_result(newQid, geonameid)
+
             # 记录未找到geonameid的ID
             found_ids = set(result_mapping.keys())
             batch_failed = [qid for qid in batch_ids if qid not in found_ids]

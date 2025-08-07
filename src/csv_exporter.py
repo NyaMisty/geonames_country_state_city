@@ -140,7 +140,7 @@ class CSVExporter:
                 return False
             
             # 确保字段顺序正确
-            expected_columns = ['country_code', 'name', 'geonameid']
+            expected_columns = ['country_code', 'name', 'admin1_code', 'geonameid']
             missing_columns = [col for col in expected_columns if col not in state_names_df.columns]
             if missing_columns:
                 self.logger.error(f"State_names数据缺少必要字段: {missing_columns}")
@@ -176,7 +176,7 @@ class CSVExporter:
                 return False
             
             # 确保字段顺序正确
-            expected_columns = ['country_code', 'state_geonameid', 'name', 'geonameid']
+            expected_columns = ['country_code', 'admin1_code', 'state_geonameid', 'name', 'geonameid']
             missing_columns = [col for col in expected_columns if col not in city_names_df.columns]
             if missing_columns:
                 self.logger.error(f"City_names数据缺少必要字段: {missing_columns}")
